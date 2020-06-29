@@ -10,11 +10,13 @@
 library(spatialrisk)
 library(tidyverse)
 library(censusxy)
-
+library(stringr)
 
 ## this is a reduced copy of the voter file available in the Franklin 
 ## county Board of Elections Website. I choose it as a representation
-## of the type of file one might be working with
+## of the type of file one might be working with, and this is a 
+## subset of about 100k records, again, just for purpose of size on 
+## Github.
 
 records <- read.csv('~/Downloads/voterfile_reduced.csv', header=TRUE)
 
@@ -28,6 +30,7 @@ records$address <- paste(records$RES_HOUSE," ",records$RES.STREET, ", ",
 ## segment to geocode the records, can be skipped down to the line 
 ## 'prep the results for use with spatialrisk'.
 ## note return = 'locations' returns only successful matches, 
+## as a 
 ## return = 'geographies' will return all records. 
 ## added in timing and ran for 10k sample
 
@@ -37,34 +40,38 @@ coded_records <- cxy_geocode(records[1:10000,], street = "RES_ADDRESS",
                              city = "RES_CITY", state = "RES_STATE", 
                            output = "simple", class = "sf")
 
-geoend_time <- proc.time() - ptm
-print("geocoding took: "geoend_time)
+geoend_time <- proc.time() - geostart_time
+print("geocoding took: ",geoend_time)
 
 ## clean returned latlong
+lnew<- coded_records$geometry%>%
+  str_remove_all(., "[c(),]")%>%
+  str_split_fixed(., " ", 2)%>%
+  as.data.frame()
+  
+lnew <- rename(lnew, c("long"="V1", "lat"="V2"))
+cols.num <- c("long","lat")
+lnew[cols.num] <- sapply(lnew[cols.num],as.double)
+bind <- cbind(coded_records,lnew)
 
-coded_records$latlong <- str_remove_all(coded_results$geometry, "[()]")
-df %>% separate(coded_records$latlong, 
-                c("Longitude","Latitude")
-
-## prep the results for use with spatialrisk 
-
-coded_records %>%
-  rename("lon" = Longitude) %>% 
-  rename("lat" = Latitude) -> records
-
-
-# timing this just for fun. Start the clock!
+## This function works by mapping across each row of the 
+## bind table, and finding the nearest point within the 
+## variable 'radius". note for here I've set it to 1000
+## meters. You could expand or contract this, which would
+## 
+## timing this just for fun. Start the clock!
 start_time <- proc.time()
-ans1 <- purrr::map2_dfr(coded_records$lon, coded_records$lat, 
-                        ~spatialrisk::points_in_circle((coded_records, .x, .y, 
-                                                   radius = 1000)[2,])
- 
+ans1 <- purrr::map2_dfr(bind$long, bind$lat,  
+                ~spatialrisk::points_in_circle(bind, .x, .y, 
+                                               lon = long, 
+                                               radius = 1000)[2,])
+
 # Stop the clock
-end_time <- proc.time() - ptm
+end_time <- proc.time() - start_time
 print(end_time)
  
                                               
-colnames(ans1) <- c("closestvanid", "n.lat", "n.long", "n.precinctname", 
+colnames(ans1) <- c("closestid", "n.lat", "n.long", "n.precinctname", 
                      "n.address", "n.city", "n.state", "n.zip", "distance_m")
                         
 result <- cbind(records, ans1)
