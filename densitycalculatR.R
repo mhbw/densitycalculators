@@ -58,7 +58,11 @@ bind <- cbind(coded_records,lnew)
 ## bind table, and finding the nearest point within the 
 ## variable 'radius". note for here I've set it to 1000
 ## meters. You could expand or contract this, which would
-## 
+## change the operating margins. note that the results, ans1
+## are the nearest geographic neighhbor, in order which then
+## needs to be joined back to the orginial table. the new 
+## column distance_m is the distance between that value and the
+## next dwelling in meters. 
 ## timing this just for fun. Start the clock!
 start_time <- proc.time()
 ans1 <- purrr::map2_dfr(bind$long, bind$lat,  
@@ -69,22 +73,30 @@ ans1 <- purrr::map2_dfr(bind$long, bind$lat,
 # Stop the clock
 end_time <- proc.time() - start_time
 print(end_time)
+
+## at this point I've run this twice and it ends at about 30 minutes on my local machine
+## for 10k records, which is rather unwieldly. That would requre something
+## on order of three days if you were to attempt 
  
-                                              
-colnames(ans1) <- c("closestid", "n.lat", "n.long", "n.precinctname", 
-                     "n.address", "n.city", "n.state", "n.zip", "distance_m")
+## rename the neighbor columns                                    
+and2 <- ans1
+
+## join the original table to the new neighbor table
                         
-result <- cbind(records, ans1)
-result
+result <- cbind(bind, ans1)
+head(result)
 
-
+## summarize and standardize the the results for the export
+## note the naming conventions should be changed to match your file
 result %>%
-  group_by(PrecinctName) %>%
-  summarise(across(distance_m, mean, na.rm = TRUE), across(VANID, n_distinct))%>%
+  group_by(PRECINCT) %>%
+  summarise(across(distance_m, mean, na.rm = TRUE), across(COUNTY.ID, n_distinct))%>%
   rename("mean_distance"=distance_m)%>%
-  rename("Distinct VANID"=VANID) -> precincts_summarized
+  rename("DistinctIDs"=COUNTY.ID)%>%select("PRECINCT","mean_distance", "Distinct IDs") -> precincts_summarized
 
+precincts_summarized <- as.data.frame(precincts_summarized)
+precincts_summarized <- select(precincts_summarized,c("PRECINCT","mean_distance", "Distinct IDs"))
+precincts_summarized <- precincts_summarized[order(precincts_summarized$mean_distance),]
 
-
-summarise(Unique_Elements = n_distinct(VANID))
-summarise(MeanDist = mean(distance_m, na.rm=TRUE))
+## export result
+write.csv(precincts_summarized, file="rCalculatedDist.csv",row.names = FALSE)
