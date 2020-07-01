@@ -12,6 +12,7 @@ library(tidyverse)
 library(censusxy)
 library(stringr)
 
+
 ## this is a reduced copy of the voter file available in the Franklin 
 ## county Board of Elections Website. I choose it as a representation
 ## of the type of file one might be working with, and this is a 
@@ -41,7 +42,10 @@ coded_records <- cxy_geocode(records[1:10000,], street = "RES_ADDRESS",
                            output = "simple", class = "sf")
 
 geoend_time <- proc.time() - geostart_time
-print("geocoding took: ",geoend_time)
+print(c("geocoding time ", geoend_time))
+
+### optional write out geocoded elements so we don't have to repeat
+write.csv(coded_records, file="Geocoded_records.csv",row.names = FALSE)
 
 ## clean returned latlong
 lnew<- coded_records$geometry%>%
@@ -72,7 +76,7 @@ ans1 <- purrr::map2_dfr(bind$long, bind$lat,
 
 # Stop the clock
 end_time <- proc.time() - start_time
-print(end_time)
+print(c('mapping distance time clocks: ',end_time[3]))
 
 ## at this point I've run this twice and it ends at about 30 minutes on my local machine
 ## for 10k records, which is rather unwieldly. That would requre something
@@ -86,17 +90,65 @@ and2 <- ans1
 result <- cbind(bind, ans1)
 head(result)
 
+
+## experimenting with a split/apply combine approach
+## this has essentially the same process but is vastly faster.
+## the obvious downside is that instead of finding what is
+## the true closest observation it has an artificial boudary
+## around the precinct, and could miss a house on the same 
+## street due to that. I think this could be an acceptable
+## sacrifice in asmuch as most people cut turf on those 
+## boundaries anyway, and therefore this is in line with application
+## this version runs in about 10 minutes, so a third of the time cost.
+
+splittime <- proc.time()
+
+biny <- as.data.frame(bind)
+
+
+out <- bind %>%
+  group_split(PRECINCT) %>%
+  map(~ {
+    dat <- .x
+    purrr::map2_dfr(dat$long, dat$lat,             
+                    ~spatialrisk::points_in_circle(dat, .x, .y, 
+                                                   lon = long, 
+                                                   radius = 1000)[2,])
+  })%>%
+  purrr::map_df(., ~.x)
+
+splitend_time <- proc.time() - splittime
+
+print(c('mapping distance time clocks: ',splitend_time[3]))
+
+## both of these are the same, 'out' being for the fast/easy method
+## and 'result' being the larger table. pick whichever 
+outresult <- cbind(bind, out)
+outresult %>%
+  group_by(PRECINCT) %>%
+  summarise(across(distance_m, mean, na.rm = TRUE), across(COUNTY.ID, n_distinct))%>%
+  rename("mean_distance"=distance_m)%>%
+  rename("DistinctIDs"=COUNTY.ID)%>%
+  as.data.frame()%>%
+  select("PRECINCT","mean_distance", "DistinctIDs")%>%
+  .[order(.$mean_distance),]-> grouped_precincts_sumed
+
+grouped_precincts_sumed
+
 ## summarize and standardize the the results for the export
 ## note the naming conventions should be changed to match your file
+
 result %>%
   group_by(PRECINCT) %>%
   summarise(across(distance_m, mean, na.rm = TRUE), across(COUNTY.ID, n_distinct))%>%
   rename("mean_distance"=distance_m)%>%
-  rename("DistinctIDs"=COUNTY.ID)%>%select("PRECINCT","mean_distance", "Distinct IDs") -> precincts_summarized
+  rename("DistinctIDs"=COUNTY.ID)%>%select("PRECINCT","mean_distance", "DistinctIDs") -> precincts_summarized
 
 precincts_summarized <- as.data.frame(precincts_summarized)
 precincts_summarized <- select(precincts_summarized,c("PRECINCT","mean_distance", "Distinct IDs"))
 precincts_summarized <- precincts_summarized[order(precincts_summarized$mean_distance),]
 
-## export result
+## export result, 'grouped_precincts_sumed' if you followed the fast route
+## 'precincts_summarized' if you followed the global route
+
 write.csv(precincts_summarized, file="rCalculatedDist.csv",row.names = FALSE)
