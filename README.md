@@ -10,5 +10,5 @@ The R script, densitycalculatR, has the benefit of including a geocoder, but is 
 
 Further work in both cases might first household the addresses. in the case of the Franklin county records, for example, with so many shared dwellings it creates a vastly nearer distance. I also might consider a better geocode method in the R script.
 
-The sample csv this was run on was from the Franklin County Board of Elections, and is no longer available.
+The sample csv this was run on was from the Franklin County Board of Elections, and is no longer available, but is preserved as voterfile_reduced.csv.
 
