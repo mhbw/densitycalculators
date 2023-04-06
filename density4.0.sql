@@ -1,5 +1,5 @@
 ################ District Density Calculator 4.0 ##################
-## This project is a bigquery focused method of finding density in 
+## This project is a BigQuery focused method of finding density in 
 ## a given geography. we're going to demonstrate a method of using 
 ## CTEs  to try and minimize weight and use BQ functions to find
 ## the most dense districts.
